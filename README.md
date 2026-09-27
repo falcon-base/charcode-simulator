@@ -2,6 +2,8 @@
 
 情報Ⅰ「情報のデジタル表現」（実教出版『最新情報Ⅰ』第3章 1-2 文字のデジタル化）の授業用シミュレータ．
 
+公開URL：https://falcon-base.github.io/charcode-simulator/
+
 ## できること
 
 - **変換する**：入力した文字列を，1文字ずつ ASCII・JISコード・Shift_JIS・EUC-JP・UTF-8・UTF-16 のバイト列に変換して並べる．16進数と2進数（ASCIIは7ビット）を切り替えられる
@@ -13,6 +15,8 @@
   - Unicodeの表：基本ラテン文字・ひらがな・カタカナ・漢字（82ページ）・全角英数字・絵文字のブロックを，256字ずつ表示する．マスの下の番号を Unicodeの番号・UTF-8・UTF-16 で切り替えられる．ブロックごとに公式の表（Unicode Code Charts のPDF）へのリンクがある
 
 ## 授業で使うときのURL
+
+`https://falcon-base.github.io/charcode-simulator/` のあとに付ける．
 
 | URL の末尾 | 開く画面 |
 |---|---|
