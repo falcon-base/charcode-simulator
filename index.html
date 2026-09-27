@@ -1,0 +1,1776 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文字コード変換シミュレータ</title>
+<meta name="description" content="同じ文字が，文字コードによってどんな0と1の並びになるかを確かめ，文字化けを実験できる授業用のシミュレータ．">
+<style>
+  :root {
+    /* 原稿用紙の緑と，ノートに引く蛍光ペンの黄色 */
+    --paper: #F4F6F0;        /* 台紙 */
+    --sheet: #FFFFFF;
+    --leaf: #2E7D5B;         /* 基調の緑 */
+    --leaf-deep: #1D5B41;    /* 緑の文字 */
+    --leaf-soft: #E3F1E8;    /* バイトのブロック */
+    --leaf-line: #D2E4D9;    /* 細い罫線 */
+    --ink: #1F2A24;
+    --ink-soft: #5E6C65;
+    --pen: #FFE27A;          /* 蛍光ペン：強調・選択中 */
+    --pen-soft: #FFF4C7;
+    --shu: #BD472C;          /* 朱：情報が失われたときだけ */
+    --shu-soft: #FBE8E2;
+
+    --font-body: "BIZ UDPGothic", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo", "Noto Sans JP", "Noto Sans CJK JP", sans-serif;
+    --font-glyph: "BIZ UDMincho", "BIZ UDPMincho", "Hiragino Mincho ProN", "Yu Mincho", "YuMincho", "Noto Serif JP", "Noto Serif CJK JP", serif;
+    --font-code: "BIZ UDGothic", "Osaka-Mono", "MS Gothic", "Noto Sans Mono CJK JP", ui-monospace, "Menlo", "Consolas", monospace;
+
+    --step--1: 0.8125rem;
+    --step-0: 1rem;
+    --step-1: 1.1875rem;
+    --step-2: 1.5rem;
+    --step-3: 2rem;
+    --step-4: 2.5rem;
+
+    --radius: 10px;
+    --masu: 3.4rem;
+    --gutter: clamp(1rem, 4vw, 2.5rem);
+    --shadow: 0 1px 2px rgba(31, 42, 36, 0.05), 0 10px 30px rgba(31, 42, 36, 0.05);
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+
+  body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: var(--step-0);
+    line-height: 1.8;
+  }
+
+  :focus-visible {
+    outline: 3px solid var(--leaf);
+    outline-offset: 2px;
+  }
+
+  .page {
+    max-width: 72rem;
+    margin: 0 auto;
+    padding: 0 var(--gutter) 4rem;
+  }
+
+  /* ---------- 見出し ---------- */
+  .masthead {
+    display: grid;
+    gap: 0.6rem;
+    padding: 2.5rem 0 1.5rem;
+  }
+  .kicker {
+    margin: 0;
+    font-size: var(--step--1);
+    letter-spacing: 0.1em;
+    color: var(--leaf-deep);
+  }
+  h1 {
+    margin: 0;
+    font-weight: 700;
+    font-size: clamp(var(--step-3), 5vw, var(--step-4));
+    line-height: 1.3;
+    letter-spacing: 0.02em;
+    text-wrap: balance;
+    word-break: keep-all;
+    overflow-wrap: anywhere;
+  }
+  .marker {
+    background: linear-gradient(transparent 62%, var(--pen) 62%);
+    padding: 0 0.1em;
+  }
+  .lede {
+    margin: 0;
+    max-width: 38em;
+    color: var(--ink-soft);
+  }
+
+  /* ---------- タブ ---------- */
+  .tabs {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    padding: 0.35rem;
+    margin-bottom: 1rem;
+    background: var(--sheet);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+  }
+  .tab {
+    appearance: none;
+    border: 0;
+    background: transparent;
+    color: var(--ink-soft);
+    font: inherit;
+    font-size: var(--step-0);
+    padding: 0.45rem 1.2rem;
+    border-radius: 999px;
+    cursor: pointer;
+    white-space: nowrap;
+  }
+  .tab:hover { color: var(--ink); background: var(--paper); }
+  .tab[aria-selected="true"] {
+    background: var(--leaf);
+    color: var(--sheet);
+    font-weight: 700;
+  }
+
+  .panel {
+    background: var(--sheet);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    padding: clamp(1.25rem, 3vw, 2.25rem);
+    display: grid;
+    gap: 1.75rem;
+  }
+  .panel[hidden] { display: none; }
+  .panel > *, .result, .field, .view { min-width: 0; }
+
+  .panel-intro {
+    margin: 0;
+    max-width: 42em;
+  }
+
+  /* ---------- 操作部 ---------- */
+  .controls { display: grid; gap: 1rem; }
+  .field { display: grid; gap: 0.35rem; }
+  .field-label {
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+  }
+  .input-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+  }
+  input[type="text"], select {
+    font: inherit;
+    font-size: var(--step-1);
+    color: var(--ink);
+    background: var(--sheet);
+    border: 1.5px solid var(--leaf-line);
+    border-radius: var(--radius);
+    padding: 0.5rem 0.85rem;
+    min-height: 2.9rem;
+  }
+  input[type="text"]:hover, select:hover { border-color: var(--leaf); }
+  input[type="text"] {
+    flex: 1 1 16rem;
+    min-width: 0;
+    letter-spacing: 0.05em;
+  }
+  select { cursor: pointer; }
+
+  .btn {
+    appearance: none;
+    font: inherit;
+    font-weight: 700;
+    border-radius: var(--radius);
+    min-height: 2.9rem;
+    padding: 0.5rem 1.4rem;
+    cursor: pointer;
+    border: 1.5px solid var(--leaf);
+  }
+  .btn-primary { background: var(--leaf); color: var(--sheet); }
+  .btn-primary:hover { background: var(--leaf-deep); border-color: var(--leaf-deep); }
+  .btn-secondary { background: var(--sheet); color: var(--leaf-deep); }
+  .btn-secondary:hover { background: var(--leaf-soft); }
+
+  .option-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.6rem 1.5rem;
+    align-items: center;
+  }
+  .presets {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    align-items: center;
+  }
+  .small-label {
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+    margin-right: 0.2rem;
+  }
+  .chip {
+    appearance: none;
+    font: inherit;
+    font-size: var(--step--1);
+    background: var(--paper);
+    color: var(--ink);
+    border: 0;
+    border-radius: 999px;
+    padding: 0.2rem 0.8rem;
+    cursor: pointer;
+  }
+  .chip:hover { background: var(--pen); }
+
+  .seg {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.2rem;
+    flex-wrap: wrap;
+  }
+  .seg button {
+    appearance: none;
+    font: inherit;
+    font-size: var(--step--1);
+    background: var(--paper);
+    color: var(--ink-soft);
+    border: 0;
+    border-radius: 999px;
+    padding: 0.2rem 0.85rem;
+    cursor: pointer;
+  }
+  .seg button:hover { color: var(--ink); }
+  .seg button[aria-pressed="true"] {
+    background: var(--leaf-deep);
+    color: var(--sheet);
+    font-weight: 700;
+  }
+
+  .note {
+    margin: 0;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+    max-width: 46em;
+  }
+  .note .mark { color: var(--shu); font-weight: 700; }
+  code.inline {
+    font-family: var(--font-code);
+    background: var(--leaf-soft);
+    border-radius: 4px;
+    padding: 0 0.3rem;
+  }
+
+  /* ---------- 変換：マスとブロック ---------- */
+  .summary {
+    margin: 0;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+  }
+  .summary strong { color: var(--ink); font-variant-numeric: tabular-nums; }
+
+  .scroll {
+    overflow-x: auto;
+    border-radius: 12px;
+    border: 1px solid var(--leaf-line);
+  }
+  table.sheet {
+    border-collapse: collapse;
+    font-variant-numeric: tabular-nums;
+  }
+  .sheet th, .sheet td {
+    border: 1px solid var(--leaf-line);
+    padding: 0;
+    vertical-align: top;
+  }
+  .sheet tr > :first-child { border-left: 0; }
+  .sheet tr:first-child > * { border-top: 0; }
+  .sheet .corner, .sheet .enc {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--sheet);
+    text-align: left;
+    min-width: 10rem;
+  }
+  .sheet .corner {
+    vertical-align: bottom;
+    padding: 0.5rem 0.9rem;
+    font-size: var(--step--1);
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  .masu {
+    width: var(--col);
+    min-width: var(--col);
+    text-align: center;
+  }
+  .masu-glyph {
+    display: grid;
+    place-items: center;
+    width: var(--masu);
+    height: var(--masu);
+    margin: 0.6rem auto 0.2rem;
+    border: 1.5px solid var(--leaf);
+    border-radius: 4px;
+    background: var(--sheet);
+    font-family: var(--font-glyph);
+    font-size: 1.85rem;
+    line-height: 1;
+  }
+  .masu-cp {
+    display: block;
+    padding-bottom: 0.4rem;
+    font-family: var(--font-code);
+    font-size: 0.6875rem;
+    color: var(--ink-soft);
+  }
+  .sheet .enc {
+    padding: 0.6rem 0.9rem;
+    font-weight: 400;
+  }
+  .enc-name { display: block; font-weight: 700; line-height: 1.4; }
+  .enc-total {
+    display: block;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .enc-total.is-none { color: var(--shu); }
+  .enc-bar {
+    display: block;
+    height: 4px;
+    margin-top: 0.35rem;
+    max-width: 7rem;
+    width: 0;
+    border-radius: 2px;
+    background: var(--leaf);
+  }
+  .sheet .bytes {
+    text-align: center;
+    padding: 0.4rem 0.3rem;
+  }
+  .byte-stack {
+    display: grid;
+    justify-items: center;
+    gap: 3px;
+  }
+  .byte {
+    display: block;
+    min-width: 2.6em;
+    padding: 0.05rem 0.35rem;
+    font-family: var(--font-code);
+    font-size: 0.9375rem;
+    line-height: 1.5;
+    letter-spacing: 0.03em;
+    background: var(--leaf-soft);
+    border-radius: 4px;
+    box-shadow: inset 0 -2px 0 rgba(46, 125, 91, 0.18);
+  }
+  .sheet .bytes.is-none { background: var(--shu-soft); }
+  .none-mark { display: block; font-weight: 700; color: var(--shu); line-height: 1.6; }
+  .none-text { display: block; font-size: 0.6875rem; color: var(--shu); }
+  .sheet .is-hot { background: var(--pen-soft); }
+  .sheet .bytes.is-none.is-hot { background: #F8DCD2; }
+
+  /* ---------- 文字化けの実験 ---------- */
+  .route {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: end;
+  }
+  .route-arrow {
+    padding-bottom: 0.6rem;
+    color: var(--leaf);
+    font-size: var(--step-1);
+  }
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; }
+
+  .verdict {
+    display: grid;
+    gap: 0.6rem;
+    padding: 1.25rem 1.4rem;
+    border-radius: 12px;
+    background: var(--paper);
+  }
+  .verdict.is-alert { background: var(--shu-soft); }
+  .verdict-status {
+    margin: 0;
+    font-size: var(--step--1);
+    font-weight: 700;
+    color: var(--ink-soft);
+  }
+  .verdict-status.is-same { color: var(--leaf-deep); }
+  .verdict-text {
+    margin: 0;
+    font-family: var(--font-glyph);
+    font-size: clamp(var(--step-2), 4vw, var(--step-3));
+    line-height: 1.45;
+    word-break: break-all;
+  }
+  .verdict-explain { margin: 0; max-width: 46em; }
+  .verdict-loss { margin: 0; max-width: 46em; color: var(--shu); font-weight: 700; }
+
+  .strip-heading { margin: 0; font-weight: 700; }
+  .strip {
+    display: grid;
+    grid-auto-columns: var(--bytew);
+    grid-template-rows: auto auto auto;
+    width: max-content;
+    font-variant-numeric: tabular-nums;
+  }
+  .strip-label {
+    grid-column: 1;
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    background: var(--sheet);
+    border-right: 1px solid var(--leaf-line);
+    padding: 0.5rem 0.8rem;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+    width: 9.5rem;
+    display: flex;
+    align-items: center;
+    line-height: 1.45;
+  }
+  .grp {
+    display: grid;
+    place-items: center;
+    margin: 0.4rem 2px;
+    padding: 0.2rem;
+    font-family: var(--font-glyph);
+    font-size: var(--step-1);
+    line-height: 1.3;
+    text-align: center;
+    min-height: 2.7rem;
+    border-radius: 8px;
+  }
+  .grp-enc { background: var(--leaf-soft); }
+  .grp-enc.is-lost { background: var(--shu-soft); color: var(--shu); }
+  .grp-dec { background: var(--sheet); border: 1.5px dashed var(--ink-soft); }
+  .grp-dec.is-lost { border-color: var(--shu); color: var(--shu); background: var(--shu-soft); }
+  .grp-meta {
+    font-family: var(--font-body);
+    font-size: 0.6875rem;
+    color: var(--ink-soft);
+    white-space: nowrap;
+  }
+  .grp.is-lost .grp-meta { color: var(--shu); }
+  .strip-byte {
+    display: grid;
+    place-items: center;
+    margin: 0 2px;
+    padding: 0.3rem 0;
+    font-family: var(--font-code);
+    font-size: 0.875rem;
+    background: var(--paper);
+    border-radius: 4px;
+  }
+
+  /* ---------- 図鑑 ---------- */
+  .guide-nav { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+  .view { display: grid; gap: 1.25rem; }
+  .view[hidden] { display: none; }
+  .view p { margin: 0; max-width: 46em; }
+
+  .guide-list {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+  }
+  .entry {
+    display: grid;
+    grid-template-columns: 7.5rem minmax(0, 1fr);
+    gap: 1.5rem;
+    padding: 1.5rem 0;
+    border-top: 1px solid var(--leaf-line);
+  }
+  .entry:first-child { border-top: 0; padding-top: 0.25rem; }
+  .entry-year { font-weight: 700; color: var(--leaf-deep); line-height: 1.5; }
+  .entry-year small {
+    display: block;
+    font-weight: 400;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+  }
+  .entry-body { display: grid; gap: 0.6rem; }
+  .entry-name { margin: 0; font-size: var(--step-2); line-height: 1.35; }
+  .entry-name .yomi {
+    margin-left: 0.6rem;
+    font-size: var(--step--1);
+    font-weight: 400;
+    color: var(--ink-soft);
+  }
+  .entry-size { font-size: var(--step--1); }
+  .entry-size b { font-weight: 700; }
+  .entry-scene { font-size: var(--step--1); color: var(--ink-soft); }
+  .entry-scene b { color: var(--ink); }
+  .entry-sample {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem 1.25rem;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+  }
+  .entry-sample code {
+    font-family: var(--font-code);
+    font-size: 0.9375rem;
+    color: var(--ink);
+    background: var(--leaf-soft);
+    border-radius: 4px;
+    padding: 0 0.4rem;
+  }
+  .entry-sample .is-none { background: var(--shu-soft); color: var(--shu); }
+  .text-link {
+    color: var(--leaf-deep);
+    font-weight: 700;
+    text-underline-offset: 3px;
+  }
+
+  /* 対応表 */
+  .detail {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1.5rem;
+    min-height: 4rem;
+    padding: 0.75rem 1.1rem;
+    border-radius: 12px;
+    background: var(--pen-soft);
+  }
+  .detail-glyph {
+    font-family: var(--font-glyph);
+    font-size: 2.2rem;
+    line-height: 1;
+    min-width: 2.4rem;
+    text-align: center;
+  }
+  .detail dl {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.25rem 1.25rem;
+    margin: 0;
+  }
+  .detail dl div { display: flex; gap: 0.4rem; align-items: baseline; }
+  .detail dt { font-size: var(--step--1); color: var(--ink-soft); }
+  .detail dd { margin: 0; font-family: var(--font-code); font-weight: 700; }
+  .detail-hint { font-size: var(--step--1); color: var(--ink-soft); }
+
+  .codegrid {
+    display: grid;
+    width: max-content;
+    font-variant-numeric: tabular-nums;
+  }
+  .cg-head {
+    display: grid;
+    place-items: center;
+    padding: 0.35rem 0.25rem;
+    font-family: var(--font-code);
+    font-size: 0.75rem;
+    line-height: 1.3;
+    color: var(--ink-soft);
+    text-align: center;
+    background: var(--sheet);
+  }
+  .cg-head b { color: var(--ink); font-size: 0.875rem; }
+  .cg-head.is-on { background: var(--pen); color: var(--ink); }
+  .cg-corner {
+    position: sticky;
+    left: 0;
+    z-index: 2;
+    font-family: var(--font-body);
+    font-size: 0.6875rem;
+    line-height: 1.35;
+  }
+  .cg-rowhead {
+    position: sticky;
+    left: 0;
+    z-index: 1;
+    border-right: 1px solid var(--leaf-line);
+  }
+  .cell {
+    appearance: none;
+    display: grid;
+    place-items: center;
+    align-content: center;
+    gap: 0.1rem;
+    margin: 0;
+    padding: 0.3rem 0.2rem;
+    border: 0;
+    border-top: 1px solid var(--leaf-line);
+    border-left: 1px solid var(--leaf-line);
+    background: var(--sheet);
+    color: var(--ink);
+    font: inherit;
+    cursor: pointer;
+    min-height: 3.6rem;
+  }
+  .cell:hover { background: var(--pen-soft); }
+  .cell[aria-pressed="true"] { background: var(--pen); }
+  .cell-glyph {
+    font-family: var(--font-glyph);
+    font-size: 1.35rem;
+    line-height: 1.1;
+  }
+  .cell-code {
+    font-family: var(--font-code);
+    font-size: 0.6875rem;
+    color: var(--ink-soft);
+    letter-spacing: 0.02em;
+  }
+  .cell.is-ctrl .cell-glyph {
+    font-family: var(--font-code);
+    font-size: 0.6875rem;
+    color: var(--ink-soft);
+  }
+  .cell.is-empty { cursor: default; background: var(--paper); }
+  .cell.is-empty:hover { background: var(--paper); }
+
+  .table-tools {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.5rem;
+    align-items: end;
+  }
+  .table-tools select { font-size: var(--step-0); min-height: 2.5rem; }
+
+  footer {
+    margin-top: 2rem;
+    font-size: var(--step--1);
+    color: var(--ink-soft);
+    display: grid;
+    gap: 0.25rem;
+  }
+  footer p { margin: 0; }
+
+  @media (max-width: 40rem) {
+    :root { --masu: 3rem; }
+    .tabs { display: flex; border-radius: 16px; }
+    .route { grid-template-columns: 1fr; }
+    .route-arrow { display: none; }
+    .entry { grid-template-columns: 1fr; gap: 0.4rem; }
+    .sheet .corner, .sheet .enc { min-width: 8rem; }
+    .strip-label { width: 7rem; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <header class="masthead">
+    <p class="kicker">情報Ⅰ　情報のデジタル表現</p>
+    <h1><span class="marker">文字コード</span><wbr>変換<wbr>シミュレータ</h1>
+    <p class="lede">同じ文字でも，文字コードが違えば0と1の並びが変わります．自分の名前を入れて確かめたり，文字化けを実験したりしてみよう．</p>
+  </header>
+
+  <nav class="tabs" role="tablist" aria-label="機能の切り替え">
+    <button class="tab" role="tab" id="tab-convert" aria-controls="panel-convert" aria-selected="true" data-hash="convert">変換する</button>
+    <button class="tab" role="tab" id="tab-mojibake" aria-controls="panel-mojibake" aria-selected="false" tabindex="-1" data-hash="mojibake">文字化けの実験</button>
+    <button class="tab" role="tab" id="tab-guide" aria-controls="panel-guide" aria-selected="false" tabindex="-1" data-hash="guide">文字コード図鑑</button>
+  </nav>
+
+  <main>
+    <!-- ===== 変換する ===== -->
+    <section class="panel" id="panel-convert" role="tabpanel" aria-labelledby="tab-convert">
+      <p class="panel-intro">文字列を入れて「変換する」を押すと，1文字ずつ6つの文字コードで0と1の並びに置き換えます．マスの下に積み上がったブロック1つが1バイトです．</p>
+
+      <form class="controls" id="convert-form">
+        <div class="field">
+          <label class="field-label" for="convert-input">変換する文字列（30文字まで）</label>
+          <div class="input-row">
+            <input type="text" id="convert-input" maxlength="30" value="あ" autocomplete="off" spellcheck="false">
+            <button class="btn btn-primary" type="submit">変換する</button>
+          </div>
+        </div>
+        <div class="option-row">
+          <div class="presets">
+            <span class="small-label">例：</span>
+            <button type="button" class="chip" data-text="あ">あ</button>
+            <button type="button" class="chip" data-text="JOHO">JOHO</button>
+            <button type="button" class="chip" data-text="ＪＯＨＯ">ＪＯＨＯ</button>
+            <button type="button" class="chip" data-text="こんにちは">こんにちは</button>
+            <button type="button" class="chip" data-text="情報Ⅰ">情報Ⅰ</button>
+            <button type="button" class="chip" data-text="🍣">🍣</button>
+          </div>
+          <div class="seg" role="group" aria-label="表示のしかた">
+            <span class="small-label">表示：</span>
+            <button type="button" data-radix="16" aria-pressed="true">16進数</button>
+            <button type="button" data-radix="2" aria-pressed="false">2進数</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="result" aria-live="polite">
+        <p class="summary" id="convert-summary"></p>
+        <div class="scroll" id="convert-sheet"></div>
+      </div>
+      <p class="note"><span class="mark">×</span> は，その文字コードでは表せない文字です．マスの下の <code class="inline">U+3042</code> のような番号は，その文字のUnicodeでの番号です．</p>
+    </section>
+
+    <!-- ===== 文字化けの実験 ===== -->
+    <section class="panel" id="panel-mojibake" role="tabpanel" aria-labelledby="tab-mojibake" hidden>
+      <p class="panel-intro">文字を0と1にする方式（エンコード）と，0と1を文字に戻す方式（デコード）を，別々に選べます．入力欄には，化けてしまった文字列を入れることもできます．</p>
+
+      <form class="controls" id="moji-form">
+        <div class="field">
+          <label class="field-label" for="moji-input">文字列（20文字まで）</label>
+          <input type="text" id="moji-input" maxlength="20" value="こんにちは" autocomplete="off" spellcheck="false">
+        </div>
+        <div class="route">
+          <div class="field">
+            <label class="field-label" for="moji-enc">0と1にする方式（エンコード）</label>
+            <select id="moji-enc"></select>
+          </div>
+          <span class="route-arrow" aria-hidden="true">→</span>
+          <div class="field">
+            <label class="field-label" for="moji-dec">読む方式（デコード）</label>
+            <select id="moji-dec"></select>
+          </div>
+        </div>
+        <div class="option-row">
+          <div class="actions">
+            <button class="btn btn-primary" type="submit">この方式で読む</button>
+            <button class="btn btn-secondary" type="button" id="moji-same">同じ方式で読む</button>
+          </div>
+          <div class="seg" role="group" aria-label="表示のしかた">
+            <span class="small-label">表示：</span>
+            <button type="button" data-radix="16" aria-pressed="true">16進数</button>
+            <button type="button" data-radix="2" aria-pressed="false">2進数</button>
+          </div>
+        </div>
+      </form>
+
+      <div class="verdict" id="moji-verdict" aria-live="polite"></div>
+
+      <div class="field">
+        <p class="strip-heading">どこで区切って読んだのか</p>
+        <div class="scroll" id="moji-strip"></div>
+        <p class="note">上の段は，0と1にしたときに1文字が何バイトになったか．下の段は，読む方式がその0と1をどこで区切り，どの文字として読んだか．</p>
+      </div>
+    </section>
+
+    <!-- ===== 文字コード図鑑 ===== -->
+    <section class="panel" id="panel-guide" role="tabpanel" aria-labelledby="tab-guide" hidden>
+      <div class="seg guide-nav" role="group" aria-label="図鑑の表示">
+        <button type="button" data-view="list" aria-pressed="true">6つの文字コード</button>
+        <button type="button" data-view="ascii" aria-pressed="false">ASCIIコードの表</button>
+        <button type="button" data-view="jis" aria-pressed="false">JISの対応表</button>
+        <button type="button" data-view="unicode" aria-pressed="false">Unicodeの表</button>
+      </div>
+
+      <!-- 一覧 -->
+      <div class="view" id="view-list">
+        <p>文字コードは，文字や記号を，2進数でどのように表すか取り決めた規則です．時代や国，目的に合わせて，いくつもの文字コードが作られてきました．ここでは生まれた順に並べています．</p>
+        <p><b>Unicode</b>は，世界中の文字に1つずつ番号を付けた表です．「あ」の番号は <code class="inline">U+3042</code> です．その番号をどう0と1にするかの方式が <b>UTF-8</b> や <b>UTF-16</b> です．実際の表は「Unicodeの表」で見られます．</p>
+        <ul class="guide-list" id="guide-list"></ul>
+      </div>
+
+      <!-- ASCIIコードの表 -->
+      <div class="view" id="view-ascii" hidden>
+        <p>ASCIIコードは1文字を7ビットで表します．7ビットのうち，<b>上位3ビットで列</b>，<b>下位4ビットで行</b>を選び，交わったマスが文字です．マスを押すと，その文字の番号を2進数・16進数・10進数で確かめられます．</p>
+        <div class="detail" id="ascii-detail" aria-live="polite"></div>
+        <div class="scroll" id="ascii-grid"></div>
+        <p class="note">左の2列（000と001）と，右下の DEL は，文字ではなく「改行」「削除」などの動作を指示する制御コード（制御文字）です．SP は空白（スペース）です．</p>
+      </div>
+
+      <!-- JISの対応表 -->
+      <div class="view" id="view-jis" hidden>
+        <p>日本語の文字は，94×94のマスの表に並んでいます．横の1行を「区」と呼びます．4区がひらがな，5区がカタカナ，16区から漢字です．表の並びはJISコードの順番のまま，<b>マスの下の番号だけ</b>を方式ごとに切り替えられます．</p>
+        <div class="table-tools">
+          <div class="field">
+            <label class="field-label" for="jis-row">表示する区</label>
+            <select id="jis-row"></select>
+          </div>
+          <div class="seg" role="group" aria-label="マスの下に表示する番号">
+            <span class="small-label">マスの下の番号：</span>
+            <button type="button" data-scheme="jis" aria-pressed="true">JIS</button>
+            <button type="button" data-scheme="sjis" aria-pressed="false">Shift_JIS</button>
+            <button type="button" data-scheme="euc" aria-pressed="false">EUC-JP</button>
+            <button type="button" data-scheme="uni" aria-pressed="false">Unicode</button>
+          </div>
+        </div>
+        <div class="detail" id="jis-detail" aria-live="polite"></div>
+        <div class="scroll" id="jis-grid"></div>
+        <p class="note">行と列の見出しはJISコードの番号です．例えば4区の「242」の行と「2」の列が交わるマスが，JISコード 2422 の「あ」です．13区と89〜92区は，パソコンの会社が独自に追加した文字（機種依存文字）です．</p>
+      </div>
+
+      <!-- Unicodeの表 -->
+      <div class="view" id="view-unicode" hidden>
+        <p>Unicodeは，世界中の文字に番号を付けた1つの大きな表です．15万字以上あるので，文字の種類ごとの「ブロック」に分かれています．番号は <code class="inline">U+</code> のあとに16進数で書きます．マスの下の番号を，Unicodeの番号・UTF-8・UTF-16で切り替えられます．</p>
+        <div class="table-tools">
+          <div class="field">
+            <label class="field-label" for="uni-block">表示するブロック</label>
+            <select id="uni-block"></select>
+          </div>
+          <div class="field" id="uni-page-field">
+            <label class="field-label" for="uni-page">表示する範囲</label>
+            <select id="uni-page"></select>
+          </div>
+          <div class="seg" role="group" aria-label="マスの下に表示する番号">
+            <span class="small-label">マスの下の番号：</span>
+            <button type="button" data-uscheme="uni" aria-pressed="true">Unicodeの番号</button>
+            <button type="button" data-uscheme="utf8" aria-pressed="false">UTF-8</button>
+            <button type="button" data-uscheme="utf16" aria-pressed="false">UTF-16</button>
+          </div>
+        </div>
+        <div class="detail" id="uni-detail" aria-live="polite"></div>
+        <div class="scroll" id="uni-grid"></div>
+        <p class="note" id="uni-note"></p>
+        <p class="note">Unicodeのすべてのブロックの表は <a class="text-link" href="https://www.unicode.org/charts/" target="_blank" rel="noopener">Unicode Code Charts</a>（英語．ブロックごとのPDF），絵文字の一覧は <a class="text-link" href="https://unicode.org/emoji/charts/full-emoji-list.html" target="_blank" rel="noopener">Full Emoji List</a>（英語）で見られます．どちらもUnicodeを定めている団体の公式ページです．</p>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <p>入力した文字は，このページの中だけで処理されます．どこにも送信されません．</p>
+    <p>教科書：実教出版『最新情報Ⅰ』第3章 1-2「数値と文字の表現」</p>
+  </footer>
+</div>
+
+<script>
+(() => {
+  "use strict";
+
+  // ---------------------------------------------------------------
+  // 文字コードの対応表を作る
+  // ブラウザの TextDecoder は Shift_JIS や EUC-JP を「読む」ことはできるが
+  // 「書く」ことはできない．そこで，読み込み時に全バイト列を読ませて
+  // 「文字 → バイト列」の対応表を逆向きに作っておく．
+  // ---------------------------------------------------------------
+  const REPLACEMENT = "�";
+  const isPUA = (cp) => cp >= 0xE000 && cp <= 0xF8FF;
+  const range = (a, b) => Array.from({ length: b - a + 1 }, (_, i) => a + i);
+
+  function buildTable(label, singleBytes, leads, trails) {
+    const dec = new TextDecoder(label);
+    const table = new Map();
+    const add = (bytes) => {
+      const s = dec.decode(Uint8Array.from(bytes));
+      if (Array.from(s).length !== 1 || s === REPLACEMENT) return;
+      if (isPUA(s.codePointAt(0))) return;
+      if (!table.has(s)) table.set(s, bytes);
+    };
+    for (const b of singleBytes) add([b]);
+    for (const l of leads) for (const t of trails) add([l, t]);
+    return table;
+  }
+
+  // Shift_JIS：0xED・0xEE（NEC選定IBM拡張）は同じ文字が0xFA以降にもあるので除く
+  const SJIS = buildTable(
+    "shift_jis",
+    range(0xA1, 0xDF),
+    [...range(0x81, 0x9F), ...range(0xE0, 0xEC), ...range(0xEF, 0xFC)],
+    [...range(0x40, 0x7E), ...range(0x80, 0xFC)]
+  );
+  const EUC = buildTable("euc-jp", [], range(0xA1, 0xFE), range(0xA1, 0xFE));
+  // EUC-JPの半角カナは 0x8E ＋ 1バイト
+  (() => {
+    const dec = new TextDecoder("euc-jp");
+    for (const b of range(0xA1, 0xDF)) {
+      const s = dec.decode(Uint8Array.of(0x8E, b));
+      if (s.length === 1 && s !== REPLACEMENT && !EUC.has(s)) EUC.set(s, [0x8E, b]);
+    }
+  })();
+
+  // ---------------------------------------------------------------
+  // 1文字ずつの符号化．表せない文字は null
+  // ---------------------------------------------------------------
+  const utf8 = new TextEncoder();
+
+  const ENCODERS = {
+    ascii: {
+      name: "ASCII",
+      bitsPerByte: 7,
+      one(ch) {
+        const cp = ch.codePointAt(0);
+        return cp < 0x80 ? [cp] : null;
+      },
+    },
+    jis: {
+      name: "JISコード",
+      one(ch) {
+        const cp = ch.codePointAt(0);
+        if (cp < 0x80) return [cp];
+        const e = EUC.get(ch);
+        if (!e) return null;
+        if (e.length === 2 && e[0] === 0x8E) return [e[1]]; // 半角カナ（JIS X 0201）
+        return e.map((b) => b - 0x80);                    // 例：あ → 24 22
+      },
+    },
+    sjis: {
+      name: "Shift_JIS",
+      one(ch) {
+        const cp = ch.codePointAt(0);
+        if (cp < 0x80) return [cp];
+        return SJIS.get(ch) || null;
+      },
+    },
+    euc: {
+      name: "EUC-JP",
+      one(ch) {
+        const cp = ch.codePointAt(0);
+        if (cp < 0x80) return [cp];
+        return EUC.get(ch) || null;
+      },
+    },
+    utf8: {
+      name: "UTF-8",
+      one(ch) {
+        if (ch === REPLACEMENT) return null;
+        return Array.from(utf8.encode(ch));
+      },
+    },
+    utf16: {
+      name: "UTF-16",
+      one(ch) {
+        if (ch === REPLACEMENT) return null;
+        const out = [];
+        for (let i = 0; i < ch.length; i++) {
+          const u = ch.charCodeAt(i);
+          out.push(u >> 8, u & 0xFF);
+        }
+        return out;
+      },
+    },
+  };
+  const ORDER = ["ascii", "jis", "sjis", "euc", "utf8", "utf16"];
+
+  // ---------------------------------------------------------------
+  // 文字列全体の符号化（文字化けの実験用）
+  // 返り値：{ bytes, groups:[{start,end,label,lost,meta,esc}] }
+  // ---------------------------------------------------------------
+  function encodeStream(text, key) {
+    const bytes = [];
+    const groups = [];
+    const chars = Array.from(text);
+
+    if (key === "jis") {
+      // 実際のJISコード（ISO-2022-JP）は，切り替えの記号で英数字と日本語を行き来する
+      let mode = "ascii";
+      const switchTo = (next) => {
+        if (mode === next) return;
+        const esc = next === "kanji" ? [0x1B, 0x24, 0x42] : [0x1B, 0x28, 0x42];
+        groups.push({ start: bytes.length, end: bytes.length + 3, label: "切替", meta: next === "kanji" ? "日本語へ" : "英数字へ", esc: true });
+        bytes.push(...esc);
+        mode = next;
+      };
+      for (const ch of chars) {
+        const cp = ch.codePointAt(0);
+        const e = EUC.get(ch);
+        if (cp < 0x80) {
+          switchTo("ascii");
+          groups.push({ start: bytes.length, end: bytes.length + 1, label: ch });
+          bytes.push(cp);
+        } else if (e && e.length === 2 && e[0] !== 0x8E) {
+          switchTo("kanji");
+          groups.push({ start: bytes.length, end: bytes.length + 2, label: ch });
+          bytes.push(e[0] - 0x80, e[1] - 0x80);
+        } else {
+          switchTo("ascii");
+          groups.push({ start: bytes.length, end: bytes.length + 1, label: ch, lost: true, meta: "?になった" });
+          bytes.push(0x3F);
+        }
+      }
+      switchTo("ascii");
+      return { bytes, groups };
+    }
+
+    for (const ch of chars) {
+      let b = ENCODERS[key].one(ch);
+      let lost = false;
+      if (b === null) { b = [0x3F]; lost = true; }  // 表せない文字は「?」になる
+      groups.push({ start: bytes.length, end: bytes.length + b.length, label: ch, lost, meta: lost ? "?になった" : "" });
+      bytes.push(...b);
+    }
+    return { bytes, groups };
+  }
+
+  // ---------------------------------------------------------------
+  // 復号．1バイトずつ読ませて，どこで区切って読んだかを記録する
+  // ---------------------------------------------------------------
+  const DECODER_LABEL = { jis: "iso-2022-jp", sjis: "shift_jis", euc: "euc-jp", utf8: "utf-8", utf16: "utf-16be" };
+
+  function decodeStream(bytes, key) {
+    const groups = [];
+    if (key === "ascii") {
+      bytes.forEach((b, i) => {
+        groups.push({ start: i, end: i + 1, text: b < 0x80 ? String.fromCharCode(b) : REPLACEMENT });
+      });
+      return groups;
+    }
+    const dec = new TextDecoder(DECODER_LABEL[key]);
+    let start = 0;
+    for (let i = 0; i < bytes.length; i++) {
+      const out = dec.decode(Uint8Array.of(bytes[i]), { stream: true });
+      if (out) {
+        groups.push({ start, end: i + 1, text: out });
+        start = i + 1;
+      }
+    }
+    const tail = dec.decode();
+    if (tail) groups.push({ start, end: bytes.length, text: tail });
+    if (start < bytes.length && !tail) {
+      // 切り替えの記号だけで終わった部分（文字を出さなかったバイト）
+      groups.push({ start, end: bytes.length, text: "", silent: true });
+    }
+    return key === "jis" ? splitEscapes(groups, bytes) : groups;
+  }
+
+  // ISO-2022-JPの切り替えの記号（ESC $ B／ESC ( B など）を，文字とは別の区切りに分ける
+  function splitEscapes(groups, bytes) {
+    const out = [];
+    for (const g of groups) {
+      let s = g.start;
+      while (s + 2 < g.end && bytes[s] === 0x1B && (g.end - s > 3 || g.silent)) {
+        out.push({ start: s, end: s + 3, text: "", silent: true });
+        s += 3;
+      }
+      if (s < g.end) out.push({ ...g, start: s });
+    }
+    return out;
+  }
+
+  // 画面に出すとき，見えない制御文字を記号に置き換える
+  function visible(s) {
+    return Array.from(s).map((c) => {
+      const cp = c.codePointAt(0);
+      if (cp < 0x20) return String.fromCodePoint(0x2400 + cp);
+      if (cp === 0x7F) return "␡";
+      if (cp === 0x20) return "␣";
+      return c;
+    }).join("");
+  }
+
+  // ---------------------------------------------------------------
+  // 表示の補助
+  // ---------------------------------------------------------------
+  const hex = (b) => b.toString(16).toUpperCase().padStart(2, "0");
+  const bin = (b, width = 8) => b.toString(2).padStart(width, "0");
+  const fmt = (b, radix, width) => (radix === 16 ? hex(b) : bin(b, width));
+  const cpLabel = (ch) => "U+" + ch.codePointAt(0).toString(16).toUpperCase().padStart(4, "0");
+  const hexJoin = (arr) => arr.map(hex).join("");
+
+  function el(tag, attrs = {}, children = []) {
+    const n = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === "class") n.className = v;
+      else if (k === "text") n.textContent = v;
+      else if (k === "style") n.setAttribute("style", v);
+      else n.setAttribute(k, v);
+    }
+    for (const c of [].concat(children)) if (c !== null && c !== undefined && c !== false) n.append(c);
+    return n;
+  }
+
+  // 押しボタン群（aria-pressed）の切り替え
+  function bindPressGroup(buttons, onChange) {
+    buttons.forEach((b) => b.addEventListener("click", () => {
+      buttons.forEach((x) => x.setAttribute("aria-pressed", x === b ? "true" : "false"));
+      onChange(b);
+    }));
+  }
+  function pressIn(buttons, pred) {
+    buttons.forEach((x) => x.setAttribute("aria-pressed", pred(x) ? "true" : "false"));
+  }
+
+  // ---------------------------------------------------------------
+  // タブ
+  // ---------------------------------------------------------------
+  const tabs = Array.from(document.querySelectorAll('[role="tab"]'));
+  function selectTab(tab, focus = true, hash) {
+    for (const t of tabs) {
+      const on = t === tab;
+      t.setAttribute("aria-selected", on ? "true" : "false");
+      t.tabIndex = on ? 0 : -1;
+      document.getElementById(t.getAttribute("aria-controls")).hidden = !on;
+    }
+    if (focus) tab.focus();
+    history.replaceState(null, "", location.search + "#" + (hash || tab.dataset.hash));
+  }
+  tabs.forEach((t, i) => {
+    t.addEventListener("click", () => selectTab(t));
+    t.addEventListener("keydown", (e) => {
+      let j = null;
+      if (e.key === "ArrowRight") j = (i + 1) % tabs.length;
+      if (e.key === "ArrowLeft") j = (i - 1 + tabs.length) % tabs.length;
+      if (e.key === "Home") j = 0;
+      if (e.key === "End") j = tabs.length - 1;
+      if (j !== null) { e.preventDefault(); selectTab(tabs[j]); }
+    });
+  });
+
+  // ---------------------------------------------------------------
+  // 変換する
+  // ---------------------------------------------------------------
+  const convertForm = document.getElementById("convert-form");
+  const convertInput = document.getElementById("convert-input");
+  const convertSheet = document.getElementById("convert-sheet");
+  const convertSummary = document.getElementById("convert-summary");
+  let convertRadix = 16;
+  let convertText = convertInput.value;
+
+  function renderConvert() {
+    const chars = Array.from(convertText);
+    convertSheet.replaceChildren();
+    if (chars.length === 0) {
+      convertSummary.textContent = "文字列を入れて「変換する」を押してください．";
+      convertSheet.hidden = true;
+      return;
+    }
+    convertSheet.hidden = false;
+    const col = convertRadix === 16 ? "4.25rem" : "6.5rem";
+
+    const rows = ORDER.map((key) => {
+      const enc = ENCODERS[key];
+      const perChar = chars.map((c) => enc.one(c));
+      const missing = perChar.filter((b) => b === null).length;
+      const total = perChar.reduce((s, b) => s + (b ? b.length : 0), 0);
+      return { key, enc, perChar, missing, total };
+    });
+    const maxTotal = Math.max(...rows.filter((r) => !r.missing).map((r) => r.total), 1);
+
+    convertSummary.replaceChildren(
+      el("strong", { text: String(chars.length) }),
+      "文字．方式ごとの合計バイト数は，左の列を見てください．"
+    );
+
+    const table = el("table", { class: "sheet", style: `--col:${col}` });
+    const head = el("tr", {}, [el("th", { class: "corner", scope: "col", text: "文字コード" })]);
+    chars.forEach((c, i) => {
+      head.append(el("th", { class: "masu", scope: "col", "data-col": i }, [
+        el("span", { class: "masu-glyph", text: visible(c) }),
+        el("span", { class: "masu-cp", text: cpLabel(c) }),
+      ]));
+    });
+    table.append(el("thead", {}, head));
+
+    const body = el("tbody");
+    for (const r of rows) {
+      const totalText = r.missing ? `表せない文字が${r.missing}つ` : `合計 ${r.total}バイト`;
+      const bar = el("span", { class: "enc-bar", "aria-hidden": "true" });
+      if (!r.missing) bar.style.width = `${Math.max(8, (r.total / maxTotal) * 100)}%`;
+      const tr = el("tr", {}, [
+        el("th", { class: "enc", scope: "row" }, [
+          el("span", { class: "enc-name", text: r.enc.name }),
+          el("span", { class: "enc-total" + (r.missing ? " is-none" : ""), text: totalText }),
+          bar,
+        ]),
+      ]);
+      r.perChar.forEach((b, i) => {
+        if (b === null) {
+          tr.append(el("td", { class: "bytes is-none", "data-col": i }, [
+            el("span", { class: "none-mark", text: "×", "aria-hidden": "true" }),
+            el("span", { class: "none-text", text: "表せない" }),
+          ]));
+        } else {
+          const width = r.enc.bitsPerByte || 8;
+          const stack = el("span", { class: "byte-stack" },
+            b.map((x) => el("span", { class: "byte", text: fmt(x, convertRadix, width) })));
+          tr.append(el("td", { class: "bytes", "data-col": i, "aria-label": `${b.length}バイト` }, stack));
+        }
+      });
+      body.append(tr);
+    }
+    table.append(body);
+    convertSheet.append(table);
+  }
+
+  // 1文字の列をなぞると，その列を蛍光ペンで塗る
+  const clearHot = () => convertSheet.querySelectorAll(".is-hot").forEach((n) => n.classList.remove("is-hot"));
+  convertSheet.addEventListener("mouseover", (e) => {
+    const cell = e.target.closest("[data-col]");
+    clearHot();
+    if (!cell) return;
+    convertSheet.querySelectorAll(`[data-col="${cell.dataset.col}"]`).forEach((n) => n.classList.add("is-hot"));
+  });
+  convertSheet.addEventListener("mouseleave", clearHot);
+
+  convertForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    convertText = convertInput.value;
+    renderConvert();
+  });
+  document.querySelectorAll("#panel-convert .chip").forEach((b) => b.addEventListener("click", () => {
+    convertInput.value = b.dataset.text;
+    convertText = b.dataset.text;
+    renderConvert();
+  }));
+  bindPressGroup(document.querySelectorAll("#panel-convert [data-radix]"), (b) => {
+    convertRadix = Number(b.dataset.radix);
+    renderConvert();
+  });
+
+  // ---------------------------------------------------------------
+  // 文字化けの実験
+  // ---------------------------------------------------------------
+  const MOJI_OPTIONS = [
+    ["ascii", "ASCII"],
+    ["jis", "JISコード（ISO-2022-JP）"],
+    ["sjis", "Shift_JIS"],
+    ["euc", "EUC-JP"],
+    ["utf8", "UTF-8"],
+    ["utf16", "UTF-16"],
+  ];
+  const NAME = Object.fromEntries(MOJI_OPTIONS.map(([k]) => [k, ENCODERS[k].name]));
+  const mojiForm = document.getElementById("moji-form");
+  const mojiInput = document.getElementById("moji-input");
+  const mojiEnc = document.getElementById("moji-enc");
+  const mojiDec = document.getElementById("moji-dec");
+  const mojiVerdict = document.getElementById("moji-verdict");
+  const mojiStrip = document.getElementById("moji-strip");
+  let mojiRadix = 16;
+
+  for (const sel of [mojiEnc, mojiDec]) {
+    for (const [k, label] of MOJI_OPTIONS) sel.append(el("option", { value: k, text: label }));
+  }
+  mojiEnc.value = "utf8";
+  mojiDec.value = "sjis";
+
+  function renderMoji() {
+    const text = mojiInput.value;
+    const encKey = mojiEnc.value;
+    const decKey = mojiDec.value;
+    mojiVerdict.replaceChildren();
+    mojiStrip.replaceChildren();
+
+    if (!text) {
+      mojiVerdict.className = "verdict";
+      mojiVerdict.append(el("p", { class: "verdict-explain", text: "文字列を入れてください．" }));
+      mojiStrip.hidden = true;
+      return;
+    }
+    mojiStrip.hidden = false;
+
+    const { bytes, groups: encGroups } = encodeStream(text, encKey);
+    const decGroups = decodeStream(bytes, decKey);
+    const decoded = decGroups.map((g) => g.text).join("");
+    const lostCount = encGroups.filter((g) => g.lost).length;
+    const inputHasReplacement = text.includes(REPLACEMENT);
+    const outputHasReplacement = decoded.includes(REPLACEMENT);
+    const same = decoded === text;
+
+    mojiVerdict.className = "verdict" + (lostCount || outputHasReplacement ? " is-alert" : "");
+    mojiVerdict.append(
+      el("p", { class: "verdict-status" + (same ? " is-same" : ""), text: same ? "入力と同じ文字列になりました" : "入力と違う文字列になりました" }),
+      el("p", { class: "verdict-text", text: visible(decoded) || "（何も表示されません）" })
+    );
+
+    const explain = encKey === decKey
+      ? `${NAME[encKey]}で0と1にした${bytes.length}バイトを，同じ${NAME[decKey]}のきまりで読みました．`
+      : `${NAME[encKey]}で0と1にした${bytes.length}バイトを，${NAME[decKey]}のきまりで区切って読みました．同じ0と1でも，どこで区切り，どの文字に対応させるかは方式によって違います．`;
+    mojiVerdict.append(el("p", { class: "verdict-explain", text: explain }));
+
+    if (outputHasReplacement) {
+      mojiVerdict.append(el("p", {
+        class: "verdict-loss",
+        text: `「${REPLACEMENT}」は，${NAME[decKey]}の対応表にない並びだったため，どの文字にも読めなかった印です．この部分の0と1は，${REPLACEMENT}に置き換わって捨てられました．`,
+      }));
+    }
+    if (inputHasReplacement) {
+      mojiVerdict.append(el("p", {
+        class: "verdict-loss",
+        text: `入力にある「${REPLACEMENT}」は，前に読んだときに0と1が捨てられた印です．元の0と1が残っていないので，どの方式で読み直しても，その部分は元の文字に戻りません．`,
+      }));
+    } else if (lostCount) {
+      mojiVerdict.append(el("p", {
+        class: "verdict-loss",
+        text: `${lostCount}文字は${NAME[encKey]}では表せないため，0と1にした時点で「?」に置き換わりました．この文字は，どの方式で読み直しても元に戻りません．`,
+      }));
+    }
+
+    // 区切りの図
+    const width = mojiRadix === 16 ? "3.4rem" : "5.8rem";
+    const strip = el("div", { class: "strip", style: `--bytew:${width}; grid-template-columns: auto repeat(${bytes.length}, var(--bytew));` });
+    strip.append(
+      el("div", { class: "strip-label", style: "grid-row:1", text: `入力した文字（${NAME[encKey]}で0と1に）` }),
+      el("div", { class: "strip-label", style: "grid-row:2", text: "0と1の並び" }),
+      el("div", { class: "strip-label", style: "grid-row:3", text: `読んだ文字（${NAME[decKey]}で区切る）` })
+    );
+    for (const g of encGroups) {
+      const n = g.end - g.start;
+      strip.append(el("div", {
+        class: "grp grp-enc" + (g.lost ? " is-lost" : ""),
+        style: `grid-row:1; grid-column:${g.start + 2} / span ${n}`,
+        title: g.esc ? "切り替えの記号（エスケープシーケンス）" : `${n}バイト`,
+      }, [
+        document.createTextNode(g.esc ? g.label : visible(g.label)),
+        el("span", { class: "grp-meta", text: g.meta || `${n}バイト` }),
+      ]));
+    }
+    bytes.forEach((b, i) => {
+      strip.append(el("div", {
+        class: "strip-byte",
+        style: `grid-row:2; grid-column:${i + 2}`,
+        text: fmt(b, mojiRadix),
+      }));
+    });
+    for (const g of decGroups) {
+      const n = g.end - g.start;
+      strip.append(el("div", {
+        class: "grp grp-dec" + (g.text.includes(REPLACEMENT) ? " is-lost" : ""),
+        style: `grid-row:3; grid-column:${g.start + 2} / span ${n}`,
+        title: `${n}バイトを1まとまりとして読んだ`,
+      }, [
+        document.createTextNode(g.silent ? "切替" : (visible(g.text) || "切替")),
+        el("span", { class: "grp-meta", text: `${n}バイト` }),
+      ]));
+    }
+    mojiStrip.append(strip);
+  }
+
+  mojiForm.addEventListener("submit", (e) => { e.preventDefault(); renderMoji(); });
+  mojiEnc.addEventListener("change", renderMoji);
+  mojiDec.addEventListener("change", renderMoji);
+  document.getElementById("moji-same").addEventListener("click", () => {
+    mojiDec.value = mojiEnc.value;
+    renderMoji();
+  });
+  bindPressGroup(document.querySelectorAll("#panel-mojibake [data-radix]"), (b) => {
+    mojiRadix = Number(b.dataset.radix);
+    renderMoji();
+  });
+
+  // ---------------------------------------------------------------
+  // 文字コード図鑑：一覧
+  // ---------------------------------------------------------------
+  const GUIDE = [
+    {
+      key: "ascii", year: "1963年", where: "アメリカ",
+      name: "ASCII", yomi: "アスキー（教科書では「ASCIIコード」）",
+      size: "1文字 7ビット（128種類）",
+      body: "英字の大文字・小文字，数字，記号，それに「改行」などの制御コードだけを決めた文字コードです．当時のコンピュータはこれだけ使えれば十分でした．ひらがなや漢字は入っていません．",
+      scene: "今ある文字コードのほとんどが，英数字の部分はASCIIと同じ番号を使っています．プログラムやURLに使う英数字は，今でもASCIIの範囲です．",
+      table: "ascii",
+    },
+    {
+      key: "jis", year: "1978年", where: "日本",
+      name: "JISコード", yomi: "ジス",
+      size: "日本語は1文字 2バイト",
+      body: "日本産業規格（JIS．2019年までの名前は日本工業規格）として，ひらがな・カタカナ・漢字などを94×94の表に並べ，番号を付けた文字コードです．教科書の「あ ＝ 2422」はこの番号です．実際のファイルでは，「ここから日本語」「ここから英数字」という切り替えの記号をはさんで使います（ISO-2022-JP）．",
+      scene: "昔の日本語の電子メールで使われていました．今はほとんど見かけません．",
+      table: "jis",
+    },
+    {
+      key: "sjis", year: "1980年代初め", where: "日本",
+      name: "Shift_JIS", yomi: "シフトジス（教科書では「シフトJISコード」）",
+      size: "英数字 1バイト，日本語 2バイト",
+      body: "JISコードの番号を「ずらして（シフトして）」，ASCIIの英数字と日本語を，切り替えの記号なしで混ぜられるようにした文字コードです．パソコンの普及とともに広まりました．",
+      scene: "日本語版のExcelで「CSV（コンマ区切り）」として保存するとShift_JISになります．UTF-8で作られたCSVをExcelで開いたときの文字化けは，今でもよく起こります．",
+      table: "jis",
+    },
+    {
+      key: "euc", year: "1980年代", where: "日本（UNIX系）",
+      name: "EUC-JP", yomi: "イーユーシー・ジェーピー",
+      size: "英数字 1バイト，日本語 2バイト",
+      body: "UNIXと呼ばれる種類のコンピュータで日本語を扱うために使われた文字コードです．日本語の2バイトはどちらも最初のビットが1なので，英数字（最初のビットが0）と見分けやすいしくみです．",
+      scene: "昔のWebページや掲示板で使われていました．今はほとんど見かけません．",
+      table: "jis",
+    },
+    {
+      key: "utf8", year: "1992年", where: "世界共通",
+      name: "UTF-8", yomi: "ユーティーエフ・エイト",
+      size: "英数字 1バイト，日本語の多く 3バイト，絵文字 4バイト",
+      body: "Unicodeの番号を0と1にする方式の1つです．英数字はASCIIとまったく同じ1バイトなので，英語圏の古いデータともそのまま混ぜられます．世界中の文字を1つの方式で扱えます．",
+      scene: "今のWebページのほとんど（9割以上）がUTF-8です．HTMLの最初に書く <meta charset=\"UTF-8\"> は，「このページをUTF-8で読んでください」という指定です．迷ったらUTF-8を選びます．",
+      table: "unicode",
+    },
+    {
+      key: "utf16", year: "1996年", where: "世界共通",
+      name: "UTF-16", yomi: "ユーティーエフ・シックスティーン",
+      size: "多くの文字 2バイト，絵文字など 4バイト",
+      body: "Unicodeの番号を，16ビット（2バイト）単位で0と1にする方式です．「あ」なら番号 U+3042 がそのまま 30 42 になります（教科書の「あ ＝ 3042」）．絵文字のように番号が大きい文字は，16ビットを2つ組にした4バイトになります．",
+      scene: "ふだん目にすることはありませんが，WindowsやJava，JavaScriptなどが，コンピュータの中で文字を扱うときに使っています．",
+      table: "unicode",
+    },
+  ];
+
+  const guideList = document.getElementById("guide-list");
+  for (const g of GUIDE) {
+    const sample = (ch) => {
+      const b = ENCODERS[g.key].one(ch);
+      return b
+        ? el("span", {}, [`「${ch}」 `, el("code", { text: b.map(hex).join(" ") })])
+        : el("span", {}, [`「${ch}」 `, el("code", { class: "is-none", text: "表せない" })]);
+    };
+    const link = g.table
+      ? el("button", { type: "button", class: "chip", "data-open": g.table }, { ascii: "ASCIIコードの表を見る", jis: "JISの対応表を見る", unicode: "Unicodeの表を見る" }[g.table])
+      : null;
+    guideList.append(el("li", { class: "entry" }, [
+      el("div", { class: "entry-year" }, [document.createTextNode(g.year), el("small", { text: g.where })]),
+      el("div", { class: "entry-body" }, [
+        el("h2", { class: "entry-name" }, [document.createTextNode(g.name), el("span", { class: "yomi", text: g.yomi })]),
+        el("p", { class: "entry-size" }, [el("b", { text: "1文字の大きさ　" }), document.createTextNode(g.size)]),
+        el("p", { text: g.body }),
+        el("p", { class: "entry-scene" }, [el("b", { text: "今も出会う場面　" }), document.createTextNode(g.scene)]),
+        el("div", { class: "entry-sample" }, [sample("A"), sample("あ"), sample("漢"), sample("🍣"), link]),
+      ]),
+    ]));
+  }
+
+  // 図鑑の中の切り替え
+  const viewButtons = document.querySelectorAll("#panel-guide [data-view]");
+  function showView(name) {
+    for (const v of ["list", "ascii", "jis", "unicode"]) document.getElementById("view-" + v).hidden = v !== name;
+    pressIn(viewButtons, (b) => b.dataset.view === name);
+  }
+  bindPressGroup(viewButtons, (b) => {
+    showView(b.dataset.view);
+    history.replaceState(null, "", location.search + "#" + (b.dataset.view === "list" ? "guide" : b.dataset.view));
+  });
+  guideList.addEventListener("click", (e) => {
+    const b = e.target.closest("[data-open]");
+    if (!b) return;
+    showView(b.dataset.open);
+    history.replaceState(null, "", location.search + "#" + b.dataset.open);
+    document.getElementById("panel-guide").scrollIntoView({ block: "start" });
+  });
+
+  // ---------------------------------------------------------------
+  // 図鑑：ASCIIコードの表（上位3ビットで列，下位4ビットで行）
+  // ---------------------------------------------------------------
+  const CTRL = ["NUL","SOH","STX","ETX","EOT","ENQ","ACK","BEL","BS","HT","LF","VT","FF","CR","SO","SI",
+                "DLE","DC1","DC2","DC3","DC4","NAK","SYN","ETB","CAN","EM","SUB","ESC","FS","GS","RS","US"];
+  const CTRL_JA = { 0x08: "1文字戻る", 0x09: "タブ", 0x0A: "改行", 0x0D: "行の先頭へ戻る", 0x1B: "切り替えの合図", 0x7F: "削除" };
+  const asciiGrid = document.getElementById("ascii-grid");
+  const asciiDetail = document.getElementById("ascii-detail");
+
+  function asciiLabel(code) {
+    if (code < 0x20) return { text: CTRL[code], ctrl: true };
+    if (code === 0x20) return { text: "SP", ctrl: true };
+    if (code === 0x7F) return { text: "DEL", ctrl: true };
+    return { text: String.fromCharCode(code), ctrl: false };
+  }
+
+  function showAsciiDetail(code) {
+    const { text, ctrl } = asciiLabel(code);
+    const meaning = code === 0x20 ? "空白（スペース）" : (ctrl ? `制御コード${CTRL_JA[code] ? "：" + CTRL_JA[code] : ""}` : "");
+    asciiDetail.replaceChildren(
+      el("span", { class: "detail-glyph", text: ctrl ? "" : text }),
+      el("dl", {}, [
+        el("div", {}, [el("dt", { text: "文字" }), el("dd", { text: ctrl ? `${text}（${meaning}）` : text })]),
+        el("div", {}, [el("dt", { text: "2進数" }), el("dd", { text: bin(code, 7) })]),
+        el("div", {}, [el("dt", { text: "16進数" }), el("dd", { text: hex(code) })]),
+        el("div", {}, [el("dt", { text: "10進数" }), el("dd", { text: String(code) })]),
+      ])
+    );
+    asciiGrid.querySelectorAll(".cg-head.is-on").forEach((n) => n.classList.remove("is-on"));
+    asciiGrid.querySelector(`[data-hi="${code >> 4}"]`)?.classList.add("is-on");
+    asciiGrid.querySelector(`[data-lo="${code & 15}"]`)?.classList.add("is-on");
+    asciiGrid.querySelectorAll(".cell[aria-pressed]").forEach((c) => c.setAttribute("aria-pressed", c.dataset.code === String(code) ? "true" : "false"));
+  }
+
+  function renderAscii() {
+    const grid = el("div", { class: "codegrid", style: "grid-template-columns: 6.5rem repeat(8, 4.2rem);" });
+    grid.append(el("div", { class: "cg-head cg-corner", text: "下位4ビット ＼ 上位3ビット" }));
+    for (let hi = 0; hi < 8; hi++) {
+      grid.append(el("div", { class: "cg-head", "data-hi": hi }, [el("b", { text: bin(hi, 3) }), el("span", { text: String(hi) })]));
+    }
+    for (let lo = 0; lo < 16; lo++) {
+      grid.append(el("div", { class: "cg-head cg-rowhead", "data-lo": lo }, [el("b", { text: bin(lo, 4) }), el("span", { text: hex(lo).slice(1) })]));
+      for (let hi = 0; hi < 8; hi++) {
+        const code = hi * 16 + lo;
+        const { text, ctrl } = asciiLabel(code);
+        grid.append(el("button", {
+          type: "button",
+          class: "cell" + (ctrl ? " is-ctrl" : ""),
+          "data-code": code,
+          "aria-pressed": "false",
+          "aria-label": `${ctrl ? text : "「" + text + "」"} 16進数 ${hex(code)}`,
+        }, [el("span", { class: "cell-glyph", text }), el("span", { class: "cell-code", text: hex(code) })]));
+      }
+    }
+    grid.addEventListener("click", (e) => {
+      const c = e.target.closest(".cell");
+      if (c) showAsciiDetail(Number(c.dataset.code));
+    });
+    asciiGrid.append(grid);
+    showAsciiDetail(0x54); // T
+  }
+  renderAscii();
+
+  // ---------------------------------------------------------------
+  // 図鑑：JISの対応表（区を選び，16×6のマスで表示する）
+  // ---------------------------------------------------------------
+  const JIS_ROW_NAMES = (k) => {
+    if (k <= 2) return "記号";
+    if (k === 3) return "英数字（全角）";
+    if (k === 4) return "ひらがな";
+    if (k === 5) return "カタカナ";
+    if (k === 6) return "ギリシア文字";
+    if (k === 7) return "キリル文字";
+    if (k === 8) return "罫線";
+    if (k === 13) return "丸数字など（機種依存文字）";
+    if (k >= 16 && k <= 47) return "第1水準漢字（音読みの順）";
+    if (k >= 48 && k <= 84) return "第2水準漢字（部首の順）";
+    if (k >= 89 && k <= 92) return "拡張漢字（機種依存文字）";
+    return "";
+  };
+  const eucDecoder = new TextDecoder("euc-jp");
+  function jisChar(ku, ten) {
+    const s = eucDecoder.decode(Uint8Array.of(0xA0 + ku, 0xA0 + ten));
+    if (s === REPLACEMENT || Array.from(s).length !== 1 || isPUA(s.codePointAt(0))) return null;
+    return s;
+  }
+  // 文字が1つでも入っている区だけを選べるようにする
+  const JIS_ROWS = range(1, 94).filter((k) => range(1, 94).some((t) => jisChar(k, t)));
+
+  const jisRowSel = document.getElementById("jis-row");
+  const jisGrid = document.getElementById("jis-grid");
+  const jisDetail = document.getElementById("jis-detail");
+  const schemeButtons = document.querySelectorAll("#view-jis [data-scheme]");
+  let jisScheme = "jis";
+  let jisSelected = null;
+
+  for (const k of JIS_ROWS) {
+    const name = JIS_ROW_NAMES(k);
+    jisRowSel.append(el("option", { value: k, text: `${k}区${name ? "　" + name : ""}` }));
+  }
+  jisRowSel.value = "4";
+
+  function codeFor(ch, scheme) {
+    if (scheme === "uni") return cpLabel(ch);
+    const b = ENCODERS[scheme].one(ch);
+    return b ? hexJoin(b) : "―";
+  }
+
+  function showJisDetail(ch) {
+    jisSelected = ch;
+    const u8 = ENCODERS.utf8.one(ch);
+    jisDetail.replaceChildren(
+      el("span", { class: "detail-glyph", text: ch }),
+      el("dl", {}, [
+        el("div", {}, [el("dt", { text: "JIS" }), el("dd", { text: codeFor(ch, "jis") })]),
+        el("div", {}, [el("dt", { text: "Shift_JIS" }), el("dd", { text: codeFor(ch, "sjis") })]),
+        el("div", {}, [el("dt", { text: "EUC-JP" }), el("dd", { text: codeFor(ch, "euc") })]),
+        el("div", {}, [el("dt", { text: "Unicode" }), el("dd", { text: cpLabel(ch) })]),
+        el("div", {}, [el("dt", { text: "UTF-8" }), el("dd", { text: hexJoin(u8) })]),
+      ])
+    );
+    jisGrid.querySelectorAll(".cell[aria-pressed]").forEach((c) => c.setAttribute("aria-pressed", c.dataset.ch === ch ? "true" : "false"));
+    jisGrid.querySelectorAll(".cg-head.is-on").forEach((n) => n.classList.remove("is-on"));
+    const jb = ENCODERS.jis.one(ch);
+    if (jb && jb.length === 2) {
+      jisGrid.querySelector(`[data-hi="${jb[1] >> 4}"]`)?.classList.add("is-on");
+      jisGrid.querySelector(`[data-lo="${jb[1] & 15}"]`)?.classList.add("is-on");
+    }
+  }
+
+  function renderJis() {
+    const ku = Number(jisRowSel.value);
+    const first = hex(0x20 + ku);
+    jisGrid.replaceChildren();
+    const grid = el("div", { class: "codegrid", style: "grid-template-columns: 4.2rem repeat(16, 3.4rem);" });
+    grid.append(el("div", { class: "cg-head cg-corner", text: `${ku}区` }));
+    for (let lo = 0; lo < 16; lo++) grid.append(el("div", { class: "cg-head", "data-lo": lo }, [el("b", { text: hex(lo).slice(1) })]));
+    let firstChar = null;
+    for (let hi = 2; hi <= 7; hi++) {
+      grid.append(el("div", { class: "cg-head cg-rowhead", "data-hi": hi }, [el("b", { text: first + hi.toString(16).toUpperCase() })]));
+      for (let lo = 0; lo < 16; lo++) {
+        const second = hi * 16 + lo;
+        const ten = second - 0x20;
+        const ch = ten >= 1 && ten <= 94 ? jisChar(ku, ten) : null;
+        if (!ch) {
+          grid.append(el("div", { class: "cell is-empty", "aria-hidden": "true" }));
+          continue;
+        }
+        if (!firstChar) firstChar = ch;
+        grid.append(el("button", {
+          type: "button",
+          class: "cell",
+          "data-ch": ch,
+          "aria-pressed": "false",
+          "aria-label": `「${ch}」 ${codeFor(ch, jisScheme)}`,
+        }, [el("span", { class: "cell-glyph", text: ch }), el("span", { class: "cell-code", text: codeFor(ch, jisScheme) })]));
+      }
+    }
+    grid.addEventListener("click", (e) => {
+      const c = e.target.closest(".cell[data-ch]");
+      if (c) showJisDetail(c.dataset.ch);
+    });
+    jisGrid.append(grid);
+    const keep = jisSelected && ENCODERS.jis.one(jisSelected)?.[0] === 0x20 + ku ? jisSelected : null;
+    showJisDetail(keep || (ku === 4 ? "あ" : firstChar));
+  }
+
+  jisRowSel.addEventListener("change", () => {
+    jisSelected = null;
+    renderJis();
+    history.replaceState(null, "", location.search + "#jis-" + jisRowSel.value);
+  });
+  bindPressGroup(schemeButtons, (b) => {
+    jisScheme = b.dataset.scheme;
+    renderJis();
+  });
+  renderJis();
+
+  // ---------------------------------------------------------------
+  // 図鑑：Unicodeの表（ブロックを選び，256字ずつ16×16のマスで表示する）
+  // ---------------------------------------------------------------
+  const CHARTS = "https://www.unicode.org/charts/PDF/";
+  const UNI_BLOCKS = [
+    { id: "latin", name: "基本ラテン文字（ASCIIと同じ）", start: 0x0000, end: 0x007F, pdf: "U0000.pdf" },
+    { id: "hiragana", name: "ひらがな", start: 0x3040, end: 0x309F, pdf: "U3040.pdf" },
+    { id: "katakana", name: "カタカナ", start: 0x30A0, end: 0x30FF, pdf: "U30A0.pdf" },
+    { id: "kanji", name: "漢字（CJK統合漢字）", start: 0x4E00, end: 0x9FFF, pdf: "U4E00.pdf", big: true },
+    { id: "fullwidth", name: "全角英数字・半角カナ", start: 0xFF00, end: 0xFFEF, pdf: "UFF00.pdf" },
+    { id: "emoji", name: "絵文字（天気・食べ物・動物など）", start: 0x1F300, end: 0x1F5FF, pdf: "U1F300.pdf" },
+    { id: "smiley", name: "絵文字（顔）", start: 0x1F600, end: 0x1F64F, pdf: "U1F600.pdf" },
+  ];
+  const uniBlockSel = document.getElementById("uni-block");
+  const uniPageSel = document.getElementById("uni-page");
+  const uniPageField = document.getElementById("uni-page-field");
+  const uniGrid = document.getElementById("uni-grid");
+  const uniDetail = document.getElementById("uni-detail");
+  const uniNote = document.getElementById("uni-note");
+  const uschemeButtons = document.querySelectorAll("#view-unicode [data-uscheme]");
+  let uniScheme = "uni";
+  let uniSelected = null;
+  const U = (cp) => "U+" + cp.toString(16).toUpperCase().padStart(4, "0");
+  const isUnassigned = (ch) => /^\p{Cn}$/u.test(ch);
+  const isControl = (ch) => /^\p{Cc}$/u.test(ch);
+
+  for (const b of UNI_BLOCKS) uniBlockSel.append(el("option", { value: b.id, text: `${b.name}（${U(b.start)}〜）` }));
+  uniBlockSel.value = "hiragana";
+
+  function uniBlock() { return UNI_BLOCKS.find((b) => b.id === uniBlockSel.value); }
+
+  function fillPages() {
+    const b = uniBlock();
+    uniPageSel.replaceChildren();
+    for (let s0 = b.start & ~0xFF; s0 <= b.end; s0 += 0x100) {
+      const from = Math.max(s0, b.start), to = Math.min(s0 + 0xFF, b.end);
+      uniPageSel.append(el("option", { value: s0, text: `${U(from)}〜${U(to)}` }));
+    }
+    uniPageField.hidden = uniPageSel.options.length <= 1;
+  }
+
+  function uniCode(ch, scheme) {
+    if (scheme === "uni") return U(ch.codePointAt(0));
+    const b = ENCODERS[scheme].one(ch);
+    return b ? hexJoin(b) : "―";
+  }
+
+  function showUniDetail(ch) {
+    uniSelected = ch;
+    const cp = ch.codePointAt(0);
+    const other = (key) => { const b = ENCODERS[key].one(ch); return b ? hexJoin(b) : "表せない"; };
+    uniDetail.replaceChildren(
+      el("span", { class: "detail-glyph", text: isControl(ch) || cp === 0x20 ? "" : ch }),
+      el("dl", {}, [
+        el("div", {}, [el("dt", { text: "Unicode" }), el("dd", { text: U(cp) })]),
+        el("div", {}, [el("dt", { text: "UTF-8" }), el("dd", { text: hexJoin(ENCODERS.utf8.one(ch)) })]),
+        el("div", {}, [el("dt", { text: "UTF-16" }), el("dd", { text: hexJoin(ENCODERS.utf16.one(ch)) })]),
+        el("div", {}, [el("dt", { text: "Shift_JIS" }), el("dd", { text: other("sjis") })]),
+        el("div", {}, [el("dt", { text: "ASCII" }), el("dd", { text: other("ascii") })]),
+      ])
+    );
+    uniGrid.querySelectorAll(".cell[aria-pressed]").forEach((c) => c.setAttribute("aria-pressed", c.dataset.cp === String(cp) ? "true" : "false"));
+    uniGrid.querySelectorAll(".cg-head.is-on").forEach((n) => n.classList.remove("is-on"));
+    uniGrid.querySelector(`[data-row="${cp >> 4}"]`)?.classList.add("is-on");
+    uniGrid.querySelector(`[data-lo="${cp & 15}"]`)?.classList.add("is-on");
+  }
+
+  function renderUnicode() {
+    const b = uniBlock();
+    const page = Number(uniPageSel.value);
+    const colw = uniScheme === "uni" ? "3.9rem" : "4.6rem";
+    uniGrid.replaceChildren();
+    const grid = el("div", { class: "codegrid", style: `grid-template-columns: 5rem repeat(16, ${colw});` });
+    grid.append(el("div", { class: "cg-head cg-corner", text: "番号" }));
+    for (let lo = 0; lo < 16; lo++) grid.append(el("div", { class: "cg-head", "data-lo": lo }, [el("b", { text: lo.toString(16).toUpperCase() })]));
+    let firstChar = null;
+    for (let row = page; row < page + 0x100 && row <= b.end; row += 16) {
+      if (row + 15 < b.start) continue;
+      grid.append(el("div", { class: "cg-head cg-rowhead", "data-row": row >> 4 }, [el("b", { text: "U+" + (row >> 4).toString(16).toUpperCase().padStart(3, "0") })]));
+      for (let lo = 0; lo < 16; lo++) {
+        const cp = row + lo;
+        const ch = String.fromCodePoint(cp);
+        if (cp < b.start || cp > b.end || isUnassigned(ch)) {
+          grid.append(el("div", { class: "cell is-empty", "aria-hidden": "true" }));
+          continue;
+        }
+        const ctrl = isControl(ch) || cp === 0x20;
+        const label = ctrl ? (cp === 0x20 ? "SP" : cp === 0x7F ? "DEL" : CTRL[cp] || "") : ch;
+        if (!firstChar && !ctrl) firstChar = ch;
+        grid.append(el("button", {
+          type: "button",
+          class: "cell" + (ctrl ? " is-ctrl" : ""),
+          "data-cp": cp,
+          "aria-pressed": "false",
+          "aria-label": `${ctrl ? label : "「" + ch + "」"} ${U(cp)}`,
+        }, [el("span", { class: "cell-glyph", text: label }), el("span", { class: "cell-code", text: uniCode(ch, uniScheme) })]));
+      }
+    }
+    grid.addEventListener("click", (e) => {
+      const c = e.target.closest(".cell[data-cp]");
+      if (c) showUniDetail(String.fromCodePoint(Number(c.dataset.cp)));
+    });
+    uniGrid.append(grid);
+
+    uniNote.replaceChildren(
+      document.createTextNode(`公式の表（PDF）：`),
+      el("a", { class: "text-link", href: CHARTS + b.pdf, target: "_blank", rel: "noopener" }, `${b.name}の表`),
+      document.createTextNode(b.big ? "（約40MBの大きなファイルです）．" : "．"),
+      document.createTextNode(b.id === "latin" ? "番号は，ASCIIとまったく同じです．" : "")
+    );
+
+    const inPage = uniSelected && (() => { const cp = uniSelected.codePointAt(0); return cp >= Math.max(page, b.start) && cp <= Math.min(page + 0xFF, b.end); })();
+    const def = b.id === "hiragana" ? "あ" : (b.id === "emoji" && page === 0x1F300 ? "🍣" : firstChar);
+    showUniDetail(inPage ? uniSelected : def);
+  }
+
+  function setUniBlock(id, keepSel = false) {
+    if (!UNI_BLOCKS.some((b) => b.id === id)) return;
+    uniBlockSel.value = id;
+    if (!keepSel) uniSelected = null;
+    fillPages();
+    renderUnicode();
+  }
+  uniBlockSel.addEventListener("change", () => {
+    setUniBlock(uniBlockSel.value);
+    history.replaceState(null, "", location.search + "#unicode-" + uniBlockSel.value);
+  });
+  uniPageSel.addEventListener("change", () => { uniSelected = null; renderUnicode(); });
+  bindPressGroup(uschemeButtons, (b) => { uniScheme = b.dataset.uscheme; renderUnicode(); });
+  setUniBlock("hiragana");
+
+  // ---------------------------------------------------------------
+  // 起動
+  // #convert #mojibake #guide #ascii #jis #jis-16 #unicode #unicode-emoji で最初の画面を選べる．?q= で最初の文字列，?enc= ?dec= で文字化けの実験の方式を指定できる
+  // ---------------------------------------------------------------
+  const params = new URLSearchParams(location.search);
+  if (params.get("q")) {
+    const q = params.get("q").slice(0, 30);
+    convertInput.value = q;
+    convertText = q;
+    mojiInput.value = q.slice(0, 20);
+  }
+  // ?enc=sjis&dec=utf8 で，文字化けの実験の方式を指定できる
+  const KEYS = MOJI_OPTIONS.map(([k]) => k);
+  if (KEYS.includes(params.get("enc"))) mojiEnc.value = params.get("enc");
+  if (KEYS.includes(params.get("dec"))) mojiDec.value = params.get("dec");
+  renderConvert();
+  renderMoji();
+
+  const tabOf = (id) => tabs.find((t) => t.dataset.hash === id);
+  function applyHash() {
+    const hash = location.hash.slice(1);
+    if (hash === "convert" || hash === "mojibake" || hash === "guide") {
+      selectTab(tabOf(hash), false);
+      if (hash === "guide") showView("list");
+    } else if (hash.startsWith("unicode")) {
+      const m = hash.match(/^unicode-([a-z]+)$/);
+      if (m) setUniBlock(m[1]);
+      selectTab(tabOf("guide"), false, hash);
+      showView("unicode");
+    } else if (hash === "ascii" || hash.startsWith("jis")) {
+      const m = hash.match(/^jis-(\d+)$/);
+      if (m && JIS_ROWS.includes(Number(m[1]))) { jisRowSel.value = m[1]; jisSelected = null; renderJis(); }
+      selectTab(tabOf("guide"), false, hash);
+      showView(hash === "ascii" ? "ascii" : "jis");
+    }
+  }
+  applyHash();
+  window.addEventListener("hashchange", applyHash);
+})();
+</script>
+</body>
+</html>
