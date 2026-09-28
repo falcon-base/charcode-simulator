@@ -2,7 +2,7 @@
 
 情報Ⅰ「情報のデジタル表現」（実教出版『最新情報Ⅰ』第3章 1-2 文字のデジタル化）の授業用シミュレータ．
 
-公開URL：https://falcon-base.github.io/charcode-simulator/
+公開URL：https://tkamiya-ssalesio.github.io/charcode-simulator/
 
 ## できること
 
@@ -16,7 +16,7 @@
 
 ## 授業で使うときのURL
 
-`https://falcon-base.github.io/charcode-simulator/` のあとに付ける．
+`https://tkamiya-ssalesio.github.io/charcode-simulator/` のあとに付ける．
 
 | URL の末尾 | 開く画面 |
 |---|---|
